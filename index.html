@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>일본 여행 정산</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <h1>🇯🇵 일본 여행 정산</h1>
+      <p class="sub">정연 · 희원 · 희찬 · 재민</p>
+    </header>
+
+    <!-- 환율 -->
+    <section class="card">
+      <h2>환율</h2>
+      <div class="rate-row">
+        <label for="rate">100엔 =</label>
+        <input id="rate" type="number" min="0" step="0.01" inputmode="decimal" />
+        <span>원</span>
+        <button id="fetchRate" type="button" class="ghost">실시간 환율 불러오기</button>
+      </div>
+      <p id="rateInfo" class="hint"></p>
+    </section>
+
+    <!-- 비용 입력 -->
+    <section class="card">
+      <h2 id="formTitle">비용 입력</h2>
+      <form id="expenseForm">
+        <fieldset>
+          <legend>낸 사람</legend>
+          <div id="payerGroup" class="chips"></div>
+        </fieldset>
+
+        <label class="field">
+          <span>내용</span>
+          <input id="desc" type="text" placeholder="예: 라멘, 숙소, 교통카드 충전" />
+        </label>
+
+        <div class="field">
+          <span>금액</span>
+          <div class="amount-row">
+            <input id="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="0" required />
+            <div class="seg" role="radiogroup" aria-label="화폐">
+              <label><input type="radio" name="currency" value="JPY" checked /><span>엔 ¥</span></label>
+              <label><input type="radio" name="currency" value="KRW" /><span>원 ₩</span></label>
+            </div>
+          </div>
+          <p id="convertPreview" class="hint"></p>
+        </div>
+
+        <label class="field">
+          <span>결제 시각</span>
+          <div class="time-row">
+            <input id="paidAt" type="datetime-local" required />
+            <button id="nowBtn" type="button" class="ghost">지금</button>
+          </div>
+        </label>
+
+        <fieldset>
+          <legend>함께 나눌 사람</legend>
+          <div id="splitGroup" class="chips"></div>
+        </fieldset>
+
+        <div class="actions">
+          <button type="submit" id="submitBtn">추가</button>
+          <button type="button" id="cancelEdit" class="ghost" hidden>수정 취소</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- 정산 결과 -->
+    <section class="card">
+      <h2>정산 결과</h2>
+      <div id="summary"></div>
+      <h3>송금 목록</h3>
+      <ul id="transfers" class="transfers"></ul>
+    </section>
+
+    <!-- 내역 -->
+    <section class="card">
+      <div class="list-head">
+        <h2>지출 내역</h2>
+        <button id="clearAll" type="button" class="danger ghost">전체 삭제</button>
+      </div>
+      <ul id="expenseList" class="expenses"></ul>
+    </section>
+  </main>
+
+  <script src="settle.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
