@@ -10,8 +10,18 @@ const PREFIX = process.env.TRIP_KEY_PREFIX || 'okinawa';
 const K_EXP = `${PREFIX}:expenses`;
 const K_RATE = `${PREFIX}:rate`;
 
-const REDIS_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const REDIS_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+// Vercel의 Upstash 연동은 KV_REST_API_URL / UPSTASH_REDIS_REST_URL 이름을 쓰고,
+// 연결할 때 접두어(예: STORAGE_)를 붙이면 STORAGE_KV_REST_API_URL 처럼 바뀜 → 모두 인식
+function findEnv(suffixes) {
+  for (const sfx of suffixes) {
+    if (process.env[sfx]) return process.env[sfx];
+    const key = Object.keys(process.env).find((k) => k.endsWith('_' + sfx) && process.env[k]);
+    if (key) return process.env[key];
+  }
+  return undefined;
+}
+const REDIS_URL = findEnv(['KV_REST_API_URL', 'UPSTASH_REDIS_REST_URL']);
+const REDIS_TOKEN = findEnv(['KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_TOKEN']);
 
 async function redis(...command) {
   const r = await fetch(REDIS_URL, {
