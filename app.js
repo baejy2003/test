@@ -22,6 +22,58 @@
     try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (_) {}
   }
 
+  // ---------- 서버 공유 저장 ----------
+  let shared = false; // 서버 저장소에 연결되었는지
+  let syncing = 0;
+
+  function applyRemote(s) {
+    state.expenses = Array.isArray(s.expenses) ? s.expenses : [];
+    if (s.rate > 0) { state.rate = s.rate; state.rateNote = s.rateNote || ''; }
+    save();
+  }
+
+  function setStatus() {
+    const el = $('syncStatus');
+    el.textContent = shared ? '● 4명 공유 중' : '● 이 기기에만 저장 중';
+    el.className = 'status ' + (shared ? 'on' : 'off');
+    el.title = shared ? '모든 사람이 같은 내역을 봐요' : '서버에 연결되지 않아 이 브라우저에만 저장돼요';
+  }
+
+  async function pull() {
+    if (syncing) return;
+    try {
+      const r = await fetch('api/state', { cache: 'no-store' });
+      if (!r.ok) throw new Error(r.status);
+      applyRemote(await r.json());
+      shared = true;
+    } catch (_) {
+      shared = false;
+    }
+    setStatus();
+    render();
+  }
+
+  // 로컬에 먼저 반영하고, 공유 모드면 서버에도 전송
+  async function mutate(payload) {
+    save(); render();
+    if (!shared) return;
+    syncing++;
+    try {
+      const r = await fetch('api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error(r.status);
+      applyRemote(await r.json());
+    } catch (_) {
+      alert('서버 저장에 실패했어요. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      syncing--;
+    }
+    if (!syncing) await pull();
+  }
+
   // ---------- 날짜 ----------
   function toLocalInput(d) {
     const pad = (n) => String(n).padStart(2, '0');
@@ -86,7 +138,7 @@
 
   // ---------- 렌더 ----------
   function render() {
-    $('rate').value = state.rate;
+    if (document.activeElement !== $('rate')) $('rate').value = state.rate;
     $('rateInfo').textContent = state.rateNote || '엔화 지출은 이 환율로 원화 환산되어 정산됩니다.';
 
     // 내역
@@ -153,15 +205,17 @@
       splitAmong,
     };
 
+    let expense;
     if (editingId) {
       const idx = state.expenses.findIndex((x) => x.id === editingId);
-      if (idx >= 0) state.expenses[idx] = { ...state.expenses[idx], ...data };
+      expense = { ...(idx >= 0 ? state.expenses[idx] : {}), id: editingId, ...data };
+      if (idx >= 0) state.expenses[idx] = expense; else state.expenses.push(expense);
     } else {
-      state.expenses.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ...data });
+      expense = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ...data };
+      state.expenses.push(expense);
     }
-    save();
     resetForm();
-    render();
+    mutate({ action: 'upsert', expense });
   });
 
   $('cancelEdit').addEventListener('click', resetForm);
@@ -173,9 +227,10 @@
     const t = ev.target;
     if (t.dataset.edit) startEdit(t.dataset.edit);
     if (t.dataset.del && confirm('이 지출을 삭제할까요?')) {
-      state.expenses = state.expenses.filter((x) => x.id !== t.dataset.del);
-      if (editingId === t.dataset.del) resetForm();
-      save(); render();
+      const id = t.dataset.del;
+      state.expenses = state.expenses.filter((x) => x.id !== id);
+      if (editingId === id) resetForm();
+      mutate({ action: 'delete', id });
     }
   });
 
@@ -183,27 +238,22 @@
     if (!state.expenses.length) return;
     if (confirm('모든 지출 내역을 삭제할까요? 되돌릴 수 없어요.')) {
       state.expenses = [];
-      resetForm(); save(); render();
+      resetForm();
+      mutate({ action: 'clear' });
     }
   });
 
+  let rateTimer = null;
   $('rate').addEventListener('input', () => {
     const v = parseFloat($('rate').value);
     if (v > 0) {
       state.rate = v;
       state.rateNote = '직접 입력한 환율';
-      save();
-      $('rateInfo').textContent = state.rateNote;
-      updatePreview();
-      renderKeepRateFocus();
+      save(); render(); updatePreview();
+      clearTimeout(rateTimer);
+      rateTimer = setTimeout(() => mutate({ action: 'rate', rate: state.rate, rateNote: state.rateNote }), 600);
     }
   });
-  // 환율 입력 중 커서가 튀지 않도록 rate 입력값은 건드리지 않고 나머지만 다시 그림
-  function renderKeepRateFocus() {
-    const v = $('rate').value;
-    render();
-    $('rate').value = v;
-  }
 
   $('fetchRate').addEventListener('click', async () => {
     const btn = $('fetchRate');
@@ -216,7 +266,8 @@
       state.rate = Math.round(krw * 100 * 100) / 100;
       const when = data.time_last_update_unix ? new Date(data.time_last_update_unix * 1000).toLocaleString('ko-KR') : '';
       state.rateNote = `실시간 환율 적용 (${when} 기준)`;
-      save(); render(); updatePreview();
+      updatePreview();
+      await mutate({ action: 'rate', rate: state.rate, rateNote: state.rateNote });
     } catch (_) {
       alert('환율을 불러오지 못했어요. 직접 입력해 주세요.');
     } finally {
@@ -227,5 +278,10 @@
   // ---------- 시작 ----------
   buildChips();
   resetForm();
+  setStatus();
   render();
+  pull();
+  // 다른 사람이 입력한 내용을 주기적으로 가져옴
+  setInterval(() => { if (!document.hidden) pull(); }, 5000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(); });
 })();
