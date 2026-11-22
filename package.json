@@ -1,0 +1,7 @@
+{
+  "name": "okinawa-trip-365",
+  "private": true,
+  "dependencies": {
+    "ioredis": "^5.4.1"
+  }
+}

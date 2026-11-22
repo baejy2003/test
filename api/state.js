@@ -23,15 +23,36 @@ function findEnv(suffixes) {
 const REDIS_URL = findEnv(['KV_REST_API_URL', 'UPSTASH_REDIS_REST_URL']);
 const REDIS_TOKEN = findEnv(['KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_TOKEN']);
 
+// Redis TCP 연결 주소 (Redis Cloud 등은 REDIS_URL만 제공. Upstash도 KV_URL/REDIS_URL 제공)
+const REDIS_TCP_URL = findEnv(['REDIS_URL', 'KV_URL']);
+
+let tcpClient = null;
+function getTcpClient() {
+  if (!tcpClient) {
+    const Redis = require('ioredis');
+    tcpClient = new Redis(REDIS_TCP_URL, { maxRetriesPerRequest: 2, connectTimeout: 5000 });
+  }
+  return tcpClient;
+}
+
 async function redis(...command) {
-  const r = await fetch(REDIS_URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(command),
-  });
-  const data = await r.json();
-  if (!r.ok || data.error) throw new Error(data.error || `redis ${r.status}`);
-  return data.result;
+  if (REDIS_URL && REDIS_TOKEN) {
+    const r = await fetch(REDIS_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(command),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || `redis ${r.status}`);
+    return data.result;
+  }
+  const [cmd, ...args] = command;
+  return getTcpClient().call(cmd, ...args);
+}
+
+// 진단용: 저장소 관련 환경 변수의 "이름"만 반환 (값은 절대 노출하지 않음)
+function storageEnvNames() {
+  return Object.keys(process.env).filter((k) => /REDIS|KV_|UPSTASH/i.test(k)).sort();
 }
 
 function cleanExpense(e) {
@@ -66,8 +87,8 @@ async function readState() {
 
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  if (!REDIS_URL || !REDIS_TOKEN) {
-    return res.status(503).json({ error: 'storage_not_configured' });
+  if (!(REDIS_URL && REDIS_TOKEN) && !REDIS_TCP_URL) {
+    return res.status(503).json({ error: 'storage_not_configured', envNames: storageEnvNames() });
   }
   try {
     if (req.method === 'GET') return res.status(200).json(await readState());

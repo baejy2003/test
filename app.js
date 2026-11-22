@@ -29,7 +29,10 @@
 
   function explain(status, body) {
     if (location.protocol === 'file:') return '파일로 직접 열었음';
-    if (status === 503 && body && body.error === 'storage_not_configured') return '서버에 Redis 저장소가 연결되지 않음';
+    if (status === 503 && body && body.error === 'storage_not_configured') {
+      const names = (body.envNames || []).join(', ');
+      return '서버에 Redis 저장소가 연결되지 않음' + (names ? ' / 발견된 설정: ' + names : ' / 관련 설정 없음');
+    }
     if (status === 404) return '서버 API를 찾을 수 없음';
     if (status === 401 || status === 403) return '서버 접근이 막힘';
     if (status >= 500) return '서버 오류' + (body && body.detail ? ': ' + body.detail : '');
