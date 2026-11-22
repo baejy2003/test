@@ -25,6 +25,19 @@
   // ---------- 서버 공유 저장 ----------
   let shared = false; // 서버 저장소에 연결되었는지
   let syncing = 0;
+  let syncError = '';
+
+  function explain(status, body) {
+    if (location.protocol === 'file:') return '파일로 직접 열었음';
+    if (status === 503 && body && body.error === 'storage_not_configured') {
+      const names = (body.envNames || []).join(', ');
+      return '서버에 Redis 저장소가 연결되지 않음' + (names ? ' / 발견된 설정: ' + names : ' / 관련 설정 없음');
+    }
+    if (status === 404) return '서버 API를 찾을 수 없음';
+    if (status === 401 || status === 403) return '서버 접근이 막힘';
+    if (status >= 500) return '서버 오류' + (body && body.detail ? ': ' + body.detail : '');
+    return '서버에 연결할 수 없음';
+  }
 
   function applyRemote(s) {
     state.expenses = Array.isArray(s.expenses) ? s.expenses : [];
@@ -34,7 +47,7 @@
 
   function setStatus() {
     const el = $('syncStatus');
-    el.textContent = shared ? '● 4명 공유 중' : '● 이 기기에만 저장 중';
+    el.textContent = shared ? '● 4명 공유 중' : `● 이 기기에만 저장 중${syncError ? ` (${syncError})` : ''}`;
     el.className = 'status ' + (shared ? 'on' : 'off');
     el.title = shared ? '모든 사람이 같은 내역을 봐요' : '서버에 연결되지 않아 이 브라우저에만 저장돼요';
   }
@@ -43,11 +56,19 @@
     if (syncing) return;
     try {
       const r = await fetch('api/state', { cache: 'no-store' });
-      if (!r.ok) throw new Error(r.status);
-      applyRemote(await r.json());
-      shared = true;
+      let body = null;
+      try { body = await r.json(); } catch (_) {}
+      if (!r.ok || !body) {
+        syncError = explain(r.status, body);
+        shared = false;
+      } else {
+        applyRemote(body);
+        shared = true;
+        syncError = '';
+      }
     } catch (_) {
       shared = false;
+      syncError = explain(0, null);
     }
     setStatus();
     render();
